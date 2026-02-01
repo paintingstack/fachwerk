@@ -1,0 +1,119 @@
+{
+  "name": "fachwerk",
+  "displayName": "Fachwerk",
+  "description": "Your Claude Code agents and skills in the sidebar. Always visible, any project.",
+  "version": "2.1.3",
+  "publisher": "gundurraga",
+  "icon": "logo.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gundurraga/fachwerk"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Machine Learning"
+  ],
+  "keywords": [
+    "claude",
+    "agents",
+    "skills",
+    "sidebar",
+    "ai",
+    "prompts",
+    "claude-code"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "fachwerk",
+          "title": "Fachwerk",
+          "icon": "$(symbol-structure)"
+        }
+      ]
+    },
+    "views": {
+      "fachwerk": [
+        {
+          "id": "fachwerkAgents",
+          "name": "Agents"
+        },
+        {
+          "id": "fachwerkSkills",
+          "name": "Skills"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "fachwerk.addAgent",
+        "title": "Add Agent",
+        "icon": "$(add)"
+      },
+      {
+        "command": "fachwerk.addSkill",
+        "title": "Add Skill",
+        "icon": "$(add)"
+      },
+      {
+        "command": "fachwerk.copyItem",
+        "title": "Copy Content",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "fachwerk.deleteItem",
+        "title": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "fachwerk.renameItem",
+        "title": "Rename",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "fachwerk.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "fachwerk.addAgent",
+          "when": "view == fachwerkAgents",
+          "group": "navigation"
+        },
+        {
+          "command": "fachwerk.addSkill",
+          "when": "view == fachwerkSkills",
+          "group": "navigation"
+        },
+        {
+          "command": "fachwerk.refresh",
+          "when": "view == fachwerkAgents || view == fachwerkSkills",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "fachwerk.copyItem",
+          "when": "view == fachwerkAgents || view == fachwerkSkills",
+          "group": "inline"
+        },
+        {
+          "command": "fachwerk.renameItem",
+          "when": "view == fachwerkAgents || view == fachwerkSkills"
+        },
+        {
+          "command": "fachwerk.deleteItem",
+          "when": "view == fachwerkAgents || view == fachwerkSkills"
+        }
+      ]
+    }
+  }
+}
