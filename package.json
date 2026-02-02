@@ -2,7 +2,7 @@
   "name": "fachwerk",
   "displayName": "Fachwerk",
   "description": "Your Claude Code agents and skills in the sidebar. Always visible, any project.",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "publisher": "gundurraga",
   "icon": "logo.png",
   "repository": {
