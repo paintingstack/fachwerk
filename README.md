@@ -1,47 +1,82 @@
 # Fachwerk
 
-Your Claude Code agents and skills in the VS Code sidebar. Always visible, any project.
+## Stop hunting through hidden directories for your Claude Code agents and skills.
 
-## The Problem
+Claude Code buries your agents in `~/.claude/agents/`, your skills in `~/.claude/skills/`, and your instructions in `~/.claude/CLAUDE.md`. Every time you need to edit one, you leave your editor, navigate to a hidden folder, and break your flow. You do this dozens of times a week if you are serious about your setup.
 
-Claude Code stores agents in `~/.claude/agents/` and skills in `~/.claude/skills/`. These directories are hidden, out of sight, and easy to forget. When you're iterating on agents, navigating there breaks your flow.
-
-## The Solution
-
-Fachwerk adds a sidebar panel that shows your agents and skills. Click to open. Right-click to rename, copy, or delete. Create new ones with the + button. No navigation required.
-
-## Installation
-
-Search "Fachwerk" in the VS Code marketplace, or:
+Fachwerk puts all of it in your VS Code sidebar. One click to open any file. One click to create a new agent or skill. Always visible, every project, no navigation required.
 
 ```
 ext install gundurraga.fachwerk
 ```
 
-## Usage
+## What you get
 
-After installation, click the Fachwerk icon in the activity bar. You'll see two panels:
+**Four sidebar panels, always one click away:**
 
-- **Agents** - Your Claude Code agents
-- **Skills** - Your Claude Code skills
+1. **Agents** -- every agent in `~/.claude/agents/`, displayed with its folder structure
+2. **Skills** -- every skill in `~/.claude/skills/`, same treatment
+3. **CLAUDE.md** -- your global `~/.claude/CLAUDE.md` and every project-level CLAUDE.md in your workspace, in one list
+4. **Custom Folders** -- any folder on your machine, pinned to the sidebar as its own section (up to 10)
 
-Click any file to open it. The sidebar auto-refreshes when files change.
+Click a file to open it. The sidebar watches your filesystem and refreshes automatically when anything changes. You never press a refresh button. You never re-navigate.
 
-### Creating Agents and Skills
+## Create agents and skills without leaving the editor
 
-Click the + button in the panel header. Enter a name. Fachwerk creates the folder structure and opens the file with a starter template.
+Click the **+** button on the Agents or Skills panel. Type a name. Fachwerk creates the directory structure, writes a starter template with frontmatter, and opens the file for editing. The template for an agent looks like this:
 
-### Context Menu
+```yaml
+---
+name: your-agent-name
+description: Describe what this agent does
+tools:
+  - Read
+  - Glob
+  - Grep
+---
 
-Right-click any item for:
+# Instructions
 
-- **Copy Content** - Copy file contents to clipboard
-- **Rename** - Rename the file or folder
-- **Delete** - Delete with confirmation
+Write your agent instructions here.
+```
 
-## Why "Fachwerk"
+You are editing within seconds. No `mkdir`, no `touch`, no remembering the correct directory path.
 
-Fachwerk is the German word for timber framing. The exposed wooden structure that holds a building together. Your agents and skills are the structure that holds your AI workflow together.
+## Pin any folder to your sidebar
+
+Prompt libraries. Shared templates. Documentation you reference constantly. Add any folder three ways:
+
+- Click **Add Folder** at the bottom of the Fachwerk panel
+- Run **"Add to Fachwerk"** from the Command Palette
+- Edit `fachwerk.folders` directly in your VS Code settings (an array of absolute paths)
+
+Each folder appears as its own collapsible section with its full directory tree. Remove it from the three-dot menu on the panel header. Folders are stored globally -- they persist across every workspace you open.
+
+## Right-click to manage files
+
+Right-click any file in the sidebar:
+
+- **Copy Content** -- copies the full file contents to your clipboard (works on all panels)
+- **Rename** -- rename agents and skills in place
+- **Delete** -- delete agents and skills with a confirmation prompt
+
+## Teach Claude Code about Fachwerk
+
+Add this to your CLAUDE.md:
+
+```markdown
+## Fachwerk
+
+The VS Code extension "Fachwerk" shows custom folders in the sidebar.
+To add or remove folders, update the `fachwerk.folders` array in VS Code's
+global settings (settings.json). Each entry is an absolute path.
+```
+
+Now when you tell Claude "add tmp/ to Fachwerk," it knows exactly what to do. Your AI manages its own sidebar.
+
+## Why the name
+
+Fachwerk is the German word for timber framing -- the exposed structure that holds a building together. Your agents, skills, and instructions are the structure that holds your AI workflow together. This extension makes that structure visible.
 
 ## License
 
