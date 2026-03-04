@@ -2,7 +2,7 @@
   "name": "fachwerk",
   "displayName": "Fachwerk",
   "description": "Your Claude Code agents, skills, CLAUDE.md files, and custom folders in the sidebar.",
-  "version": "2.3.0",
+  "version": "2.3.2",
   "publisher": "gundurraga",
   "icon": "logo.png",
   "repository": {

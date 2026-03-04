@@ -264,23 +264,46 @@ function activate(context) {
     treeDataProvider: claudeMdProvider,
   });
 
-  // Empty folders view (shows only when no folders configured)
-  vscode.window.registerTreeDataProvider("fachwerkFolders", {
-    getTreeItem: (e) => e,
-    getChildren: () => [],
-  });
+  // Empty folders view (hosts the "Add Folder" welcome button)
+  let needsReload = false;
+  try {
+    vscode.window.registerTreeDataProvider("fachwerkFolders", {
+      getTreeItem: (e) => e,
+      getChildren: () => [],
+    });
+  } catch (_) {
+    needsReload = true;
+  }
 
   // Folder slots
   const folderSlots = [];
   const folderViews = [];
   for (let i = 0; i < MAX_FOLDER_SLOTS; i++) {
     const provider = new FolderSlotProvider();
-    const view = vscode.window.createTreeView(`fachwerkFolder${i}`, {
-      treeDataProvider: provider,
-      showCollapseAll: true,
-    });
+    let view = null;
+    try {
+      view = vscode.window.createTreeView(`fachwerkFolder${i}`, {
+        treeDataProvider: provider,
+        showCollapseAll: true,
+      });
+    } catch (_) {
+      needsReload = true;
+    }
     folderSlots.push(provider);
     folderViews.push(view);
+  }
+
+  if (needsReload) {
+    vscode.window
+      .showInformationMessage(
+        "Fachwerk was updated. Reload the window to enable all sidebar panels.",
+        "Reload Window"
+      )
+      .then((choice) => {
+        if (choice === "Reload Window") {
+          vscode.commands.executeCommand("workbench.action.reloadWindow");
+        }
+      });
   }
 
   function updateFolderSlots() {
@@ -291,7 +314,7 @@ function activate(context) {
     for (let i = 0; i < MAX_FOLDER_SLOTS; i++) {
       if (i < folders.length) {
         folderSlots[i].setFolder(folders[i]);
-        folderViews[i].title = path.basename(folders[i]);
+        if (folderViews[i]) folderViews[i].title = path.basename(folders[i]);
         vscode.commands.executeCommand(
           "setContext",
           `fachwerk.hasFolder${i}`,
