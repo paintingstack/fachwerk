@@ -1,8 +1,8 @@
 {
   "name": "fachwerk",
   "displayName": "Fachwerk",
-  "description": "Your Claude Code agents and skills in the sidebar. Always visible, any project.",
-  "version": "2.1.5",
+  "description": "Your Claude Code agents, skills, CLAUDE.md files, and custom folders in the sidebar.",
+  "version": "2.3.0",
   "publisher": "gundurraga",
   "icon": "logo.png",
   "repository": {
@@ -23,11 +23,23 @@
     "sidebar",
     "ai",
     "prompts",
-    "claude-code"
+    "claude-code",
+    "claude-md"
   ],
   "activationEvents": [],
   "main": "./extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Fachwerk",
+      "properties": {
+        "fachwerk.folders": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "description": "Absolute paths to folders shown as sections in the sidebar (max 10)"
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -39,81 +51,77 @@
     },
     "views": {
       "fachwerk": [
-        {
-          "id": "fachwerkAgents",
-          "name": "Agents"
-        },
-        {
-          "id": "fachwerkSkills",
-          "name": "Skills"
-        }
+        { "id": "fachwerkAgents", "name": "Agents" },
+        { "id": "fachwerkSkills", "name": "Skills" },
+        { "id": "fachwerkClaudeMd", "name": "CLAUDE.md" },
+        { "id": "fachwerkFolder0", "name": "Folder", "when": "fachwerk.hasFolder0" },
+        { "id": "fachwerkFolder1", "name": "Folder", "when": "fachwerk.hasFolder1" },
+        { "id": "fachwerkFolder2", "name": "Folder", "when": "fachwerk.hasFolder2" },
+        { "id": "fachwerkFolder3", "name": "Folder", "when": "fachwerk.hasFolder3" },
+        { "id": "fachwerkFolder4", "name": "Folder", "when": "fachwerk.hasFolder4" },
+        { "id": "fachwerkFolder5", "name": "Folder", "when": "fachwerk.hasFolder5" },
+        { "id": "fachwerkFolder6", "name": "Folder", "when": "fachwerk.hasFolder6" },
+        { "id": "fachwerkFolder7", "name": "Folder", "when": "fachwerk.hasFolder7" },
+        { "id": "fachwerkFolder8", "name": "Folder", "when": "fachwerk.hasFolder8" },
+        { "id": "fachwerkFolder9", "name": "Folder", "when": "fachwerk.hasFolder9" },
+        { "id": "fachwerkFolders", "name": "Add Folder" }
       ]
     },
     "commands": [
-      {
-        "command": "fachwerk.addAgent",
-        "title": "Add Agent",
-        "icon": "$(add)"
-      },
-      {
-        "command": "fachwerk.addSkill",
-        "title": "Add Skill",
-        "icon": "$(add)"
-      },
-      {
-        "command": "fachwerk.copyItem",
-        "title": "Copy Content",
-        "icon": "$(copy)"
-      },
-      {
-        "command": "fachwerk.deleteItem",
-        "title": "Delete",
-        "icon": "$(trash)"
-      },
-      {
-        "command": "fachwerk.renameItem",
-        "title": "Rename",
-        "icon": "$(edit)"
-      },
-      {
-        "command": "fachwerk.refresh",
-        "title": "Refresh",
-        "icon": "$(refresh)"
-      }
+      { "command": "fachwerk.addAgent", "title": "Add Agent", "icon": "$(add)" },
+      { "command": "fachwerk.addSkill", "title": "Add Skill", "icon": "$(add)" },
+      { "command": "fachwerk.addFolder", "title": "Add to Fachwerk", "icon": "$(add)" },
+      { "command": "fachwerk.removeFolder0", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder1", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder2", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder3", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder4", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder5", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder6", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder7", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder8", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.removeFolder9", "title": "Remove Folder", "icon": "$(trash)" },
+      { "command": "fachwerk.copyItem", "title": "Copy Content", "icon": "$(copy)" },
+      { "command": "fachwerk.deleteItem", "title": "Delete", "icon": "$(trash)" },
+      { "command": "fachwerk.renameItem", "title": "Rename", "icon": "$(edit)" },
+      { "command": "fachwerk.refresh", "title": "Refresh", "icon": "$(refresh)" }
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "fachwerk.addAgent",
-          "when": "view == fachwerkAgents",
-          "group": "navigation"
-        },
-        {
-          "command": "fachwerk.addSkill",
-          "when": "view == fachwerkSkills",
-          "group": "navigation"
-        },
+        { "command": "fachwerk.addAgent", "when": "view == fachwerkAgents", "group": "navigation" },
+        { "command": "fachwerk.addSkill", "when": "view == fachwerkSkills", "group": "navigation" },
+        { "command": "fachwerk.addFolder", "when": "view == fachwerkFolders", "group": "navigation" },
+        { "command": "fachwerk.removeFolder0", "when": "view == fachwerkFolder0" },
+        { "command": "fachwerk.removeFolder1", "when": "view == fachwerkFolder1" },
+        { "command": "fachwerk.removeFolder2", "when": "view == fachwerkFolder2" },
+        { "command": "fachwerk.removeFolder3", "when": "view == fachwerkFolder3" },
+        { "command": "fachwerk.removeFolder4", "when": "view == fachwerkFolder4" },
+        { "command": "fachwerk.removeFolder5", "when": "view == fachwerkFolder5" },
+        { "command": "fachwerk.removeFolder6", "when": "view == fachwerkFolder6" },
+        { "command": "fachwerk.removeFolder7", "when": "view == fachwerkFolder7" },
+        { "command": "fachwerk.removeFolder8", "when": "view == fachwerkFolder8" },
+        { "command": "fachwerk.removeFolder9", "when": "view == fachwerkFolder9" },
         {
           "command": "fachwerk.refresh",
-          "when": "view == fachwerkAgents || view == fachwerkSkills",
+          "when": "view == fachwerkAgents || view == fachwerkSkills || view == fachwerkClaudeMd || view =~ /^fachwerkFolder\\d$/",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "fachwerk.copyItem",
-          "when": "view == fachwerkAgents || view == fachwerkSkills",
+          "when": "(view == fachwerkAgents || view == fachwerkSkills || view == fachwerkClaudeMd || view =~ /^fachwerkFolder\\d$/) && viewItem != folder",
           "group": "inline"
         },
-        {
-          "command": "fachwerk.renameItem",
-          "when": "view == fachwerkAgents || view == fachwerkSkills"
-        },
-        {
-          "command": "fachwerk.deleteItem",
-          "when": "view == fachwerkAgents || view == fachwerkSkills"
-        }
+        { "command": "fachwerk.renameItem", "when": "view == fachwerkAgents || view == fachwerkSkills" },
+        { "command": "fachwerk.deleteItem", "when": "view == fachwerkAgents || view == fachwerkSkills" }
       ]
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "fachwerkFolders",
+        "contents": "[Add Folder](command:fachwerk.addFolder)"
+      }
+    ]
   }
 }
