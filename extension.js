@@ -544,6 +544,16 @@ Write your skill instructions here.
     }
   );
 
+  const copyPath = vscode.commands.registerCommand(
+    "fachwerk.copyPath",
+    async (item) => {
+      if (!item || !item.resourceUri) return;
+      const itemPath = item.resourceUri.fsPath;
+      await vscode.env.clipboard.writeText(itemPath);
+      vscode.window.showInformationMessage(`Copied path: ${itemPath}`);
+    }
+  );
+
   const deleteItem = vscode.commands.registerCommand(
     "fachwerk.deleteItem",
     async (item) => {
@@ -621,6 +631,7 @@ Write your skill instructions here.
     addSkill,
     addFolder,
     copyItem,
+    copyPath,
     deleteItem,
     renameItem,
     refresh,

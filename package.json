@@ -2,7 +2,7 @@
   "name": "fachwerk",
   "displayName": "Fachwerk",
   "description": "Your Claude Code agents, skills, CLAUDE.md files, and custom folders in the sidebar.",
-  "version": "2.3.2",
+  "version": "2.4.0",
   "publisher": "gundurraga",
   "icon": "logo.png",
   "repository": {
@@ -82,6 +82,7 @@
       { "command": "fachwerk.removeFolder8", "title": "Remove Folder", "icon": "$(trash)" },
       { "command": "fachwerk.removeFolder9", "title": "Remove Folder", "icon": "$(trash)" },
       { "command": "fachwerk.copyItem", "title": "Copy Content", "icon": "$(copy)" },
+      { "command": "fachwerk.copyPath", "title": "Copy Path", "icon": "$(link)" },
       { "command": "fachwerk.deleteItem", "title": "Delete", "icon": "$(trash)" },
       { "command": "fachwerk.renameItem", "title": "Rename", "icon": "$(edit)" },
       { "command": "fachwerk.refresh", "title": "Refresh", "icon": "$(refresh)" }
@@ -112,6 +113,10 @@
           "command": "fachwerk.copyItem",
           "when": "(view == fachwerkAgents || view == fachwerkSkills || view == fachwerkClaudeMd || view =~ /^fachwerkFolder\\d$/) && viewItem != folder",
           "group": "inline"
+        },
+        {
+          "command": "fachwerk.copyPath",
+          "when": "view == fachwerkAgents || view == fachwerkSkills || view == fachwerkClaudeMd || view =~ /^fachwerkFolder\\d$/"
         },
         { "command": "fachwerk.renameItem", "when": "view == fachwerkAgents || view == fachwerkSkills" },
         { "command": "fachwerk.deleteItem", "when": "view == fachwerkAgents || view == fachwerkSkills" }

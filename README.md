@@ -57,6 +57,7 @@ Each folder appears as its own collapsible section with its full directory tree.
 Right-click any file in the sidebar:
 
 - **Copy Content** -- copies the full file contents to your clipboard (works on all panels)
+- **Copy Path** -- copies the absolute path of any file or folder, handy for pointing an LLM at exactly the file you mean (works on all panels)
 - **Rename** -- rename agents and skills in place
 - **Delete** -- delete agents and skills with a confirmation prompt
 
