@@ -2,3 +2,6 @@
 .gitignore
 press-release.md
 *.vsix
+
+.env
+.env.*
