@@ -7,7 +7,17 @@ const CLAUDE_DIR = path.join(os.homedir(), ".claude");
 const AGENTS_DIR = path.join(CLAUDE_DIR, "agents");
 const SKILLS_DIR = path.join(CLAUDE_DIR, "skills");
 const GLOBAL_CLAUDE_MD = path.join(CLAUDE_DIR, "CLAUDE.md");
+const GLOBAL_AGENTS_MD = path.join(os.homedir(), ".codex", "AGENTS.md");
 const MAX_FOLDER_SLOTS = 10;
+
+// Follow links, so the editor opens and watches the file that is really edited
+function realPath(filePath) {
+  try {
+    return fs.realpathSync(filePath);
+  } catch {
+    return filePath;
+  }
+}
 
 function ensureDirectories() {
   if (!fs.existsSync(AGENTS_DIR)) {
@@ -177,65 +187,39 @@ class ClaudeMdProvider {
     return element;
   }
 
+  instructionItem(label, filePath, description) {
+    const target = vscode.Uri.file(realPath(filePath));
+    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+    item.command = { command: "vscode.open", title: "Open", arguments: [target] };
+    item.contextValue = "claudemd";
+    item.iconPath = new vscode.ThemeIcon("book");
+    item.resourceUri = target;
+    item.description = description;
+    return item;
+  }
+
   getChildren() {
     const items = [];
 
     if (fs.existsSync(GLOBAL_CLAUDE_MD)) {
-      const item = new vscode.TreeItem(
-        "Global CLAUDE.md",
-        vscode.TreeItemCollapsibleState.None
-      );
-      item.command = {
-        command: "vscode.open",
-        title: "Open",
-        arguments: [vscode.Uri.file(GLOBAL_CLAUDE_MD)],
-      };
-      item.contextValue = "claudemd";
-      item.iconPath = new vscode.ThemeIcon("book");
-      item.resourceUri = vscode.Uri.file(GLOBAL_CLAUDE_MD);
-      item.description = "~/.claude/";
-      items.push(item);
+      items.push(this.instructionItem("Global CLAUDE.md", GLOBAL_CLAUDE_MD, "~/.claude/"));
+    }
+    if (fs.existsSync(GLOBAL_AGENTS_MD)) {
+      items.push(this.instructionItem("Global AGENTS.md", GLOBAL_AGENTS_MD, "~/.codex/"));
     }
 
     const workspaceFolders = vscode.workspace.workspaceFolders || [];
     for (const folder of workspaceFolders) {
-      const dotClaudePath = path.join(
-        folder.uri.fsPath,
-        ".claude",
-        "CLAUDE.md"
-      );
-      const rootPath = path.join(folder.uri.fsPath, "CLAUDE.md");
-
-      if (fs.existsSync(dotClaudePath)) {
-        const item = new vscode.TreeItem(
-          "Project CLAUDE.md",
-          vscode.TreeItemCollapsibleState.None
-        );
-        item.command = {
-          command: "vscode.open",
-          title: "Open",
-          arguments: [vscode.Uri.file(dotClaudePath)],
-        };
-        item.contextValue = "claudemd";
-        item.iconPath = new vscode.ThemeIcon("book");
-        item.resourceUri = vscode.Uri.file(dotClaudePath);
-        item.description = folder.name;
-        items.push(item);
-      } else if (fs.existsSync(rootPath)) {
-        const item = new vscode.TreeItem(
-          "Project CLAUDE.md",
-          vscode.TreeItemCollapsibleState.None
-        );
-        item.command = {
-          command: "vscode.open",
-          title: "Open",
-          arguments: [vscode.Uri.file(rootPath)],
-        };
-        item.contextValue = "claudemd";
-        item.iconPath = new vscode.ThemeIcon("book");
-        item.resourceUri = vscode.Uri.file(rootPath);
-        item.description = folder.name;
-        items.push(item);
+      const claudeMd = [
+        path.join(folder.uri.fsPath, ".claude", "CLAUDE.md"),
+        path.join(folder.uri.fsPath, "CLAUDE.md"),
+      ].find((candidate) => fs.existsSync(candidate));
+      if (claudeMd) {
+        items.push(this.instructionItem("Project CLAUDE.md", claudeMd, folder.name));
+      }
+      const agentsMd = path.join(folder.uri.fsPath, "AGENTS.md");
+      if (fs.existsSync(agentsMd)) {
+        items.push(this.instructionItem("Project AGENTS.md", agentsMd, folder.name));
       }
     }
 
@@ -335,10 +319,10 @@ function activate(context) {
 
   // File watchers for agents/skills
   const agentsWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(AGENTS_DIR, "**/*")
+    new vscode.RelativePattern(realPath(AGENTS_DIR), "**/*")
   );
   const skillsWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(SKILLS_DIR, "**/*")
+    new vscode.RelativePattern(realPath(SKILLS_DIR), "**/*")
   );
 
   agentsWatcher.onDidCreate(() => agentsProvider.refresh());
@@ -349,12 +333,16 @@ function activate(context) {
   skillsWatcher.onDidDelete(() => skillsProvider.refresh());
   skillsWatcher.onDidChange(() => skillsProvider.refresh());
 
-  const claudeMdWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(CLAUDE_DIR, "CLAUDE.md")
-  );
-  claudeMdWatcher.onDidCreate(() => claudeMdProvider.refresh());
-  claudeMdWatcher.onDidDelete(() => claudeMdProvider.refresh());
-  claudeMdWatcher.onDidChange(() => claudeMdProvider.refresh());
+  const globalInstructionWatchers = [GLOBAL_CLAUDE_MD, GLOBAL_AGENTS_MD].map((filePath) => {
+    const target = realPath(filePath);
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(path.dirname(target), path.basename(target))
+    );
+    watcher.onDidCreate(() => claudeMdProvider.refresh());
+    watcher.onDidDelete(() => claudeMdProvider.refresh());
+    watcher.onDidChange(() => claudeMdProvider.refresh());
+    return watcher;
+  });
 
   function watchProjectClaudeMd() {
     const watchers = [];
@@ -365,7 +353,10 @@ function activate(context) {
       const w2 = vscode.workspace.createFileSystemWatcher(
         new vscode.RelativePattern(folder, "CLAUDE.md")
       );
-      for (const w of [w1, w2]) {
+      const w3 = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(folder, "AGENTS.md")
+      );
+      for (const w of [w1, w2, w3]) {
         w.onDidCreate(() => claudeMdProvider.refresh());
         w.onDidDelete(() => claudeMdProvider.refresh());
         w.onDidChange(() => claudeMdProvider.refresh());
@@ -637,7 +628,7 @@ Write your skill instructions here.
     refresh,
     agentsWatcher,
     skillsWatcher,
-    claudeMdWatcher,
+    ...globalInstructionWatchers,
     ...folderSlots
   );
 }

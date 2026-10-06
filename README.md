@@ -16,7 +16,7 @@ ext install gundurraga.fachwerk
 
 1. **Agents** -- every agent in `~/.claude/agents/`, displayed with its folder structure
 2. **Skills** -- every skill in `~/.claude/skills/`, same treatment
-3. **CLAUDE.md** -- your global `~/.claude/CLAUDE.md` and every project-level CLAUDE.md in your workspace, in one list
+3. **Instructions** -- your global `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, and every project-level CLAUDE.md and AGENTS.md in your workspace, in one list. Linked files open at their real location
 4. **Custom Folders** -- any folder on your machine, pinned to the sidebar as its own section (up to 10)
 
 Click a file to open it. The sidebar watches your filesystem and refreshes automatically when anything changes. You never press a refresh button. You never re-navigate.

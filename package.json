@@ -1,7 +1,7 @@
 {
   "name": "fachwerk",
   "displayName": "Fachwerk",
-  "description": "Your Claude Code agents, skills, CLAUDE.md files, and custom folders in the sidebar.",
+  "description": "Your Claude Code agents, skills, CLAUDE.md and AGENTS.md files, and custom folders in the sidebar.",
   "version": "2.4.0",
   "publisher": "gundurraga",
   "icon": "logo.png",
@@ -53,7 +53,7 @@
       "fachwerk": [
         { "id": "fachwerkAgents", "name": "Agents" },
         { "id": "fachwerkSkills", "name": "Skills" },
-        { "id": "fachwerkClaudeMd", "name": "CLAUDE.md" },
+        { "id": "fachwerkClaudeMd", "name": "Instructions" },
         { "id": "fachwerkFolder0", "name": "Folder", "when": "fachwerk.hasFolder0" },
         { "id": "fachwerkFolder1", "name": "Folder", "when": "fachwerk.hasFolder1" },
         { "id": "fachwerkFolder2", "name": "Folder", "when": "fachwerk.hasFolder2" },
