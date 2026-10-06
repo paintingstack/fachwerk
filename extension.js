@@ -187,43 +187,45 @@ class ClaudeMdProvider {
     return element;
   }
 
-  instructionItem(label, filePath, description) {
-    const target = vscode.Uri.file(realPath(filePath));
-    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
-    item.command = { command: "vscode.open", title: "Open", arguments: [target] };
-    item.contextValue = "claudemd";
-    item.iconPath = new vscode.ThemeIcon("book");
-    item.resourceUri = target;
-    item.description = description;
-    return item;
-  }
-
+  // One item per real file: links that resolve to the same file (for example
+  // ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md both pointing at one shared file)
+  // collapse into a single entry whose tooltip names every path that reads it.
   getChildren() {
-    const items = [];
-
-    if (fs.existsSync(GLOBAL_CLAUDE_MD)) {
-      items.push(this.instructionItem("Global CLAUDE.md", GLOBAL_CLAUDE_MD, "~/.claude/"));
-    }
-    if (fs.existsSync(GLOBAL_AGENTS_MD)) {
-      items.push(this.instructionItem("Global AGENTS.md", GLOBAL_AGENTS_MD, "~/.codex/"));
-    }
-
-    const workspaceFolders = vscode.workspace.workspaceFolders || [];
-    for (const folder of workspaceFolders) {
+    const candidates = [
+      { scope: "Global", filePath: GLOBAL_CLAUDE_MD },
+      { scope: "Global", filePath: GLOBAL_AGENTS_MD },
+    ];
+    for (const folder of vscode.workspace.workspaceFolders || []) {
       const claudeMd = [
         path.join(folder.uri.fsPath, ".claude", "CLAUDE.md"),
         path.join(folder.uri.fsPath, "CLAUDE.md"),
       ].find((candidate) => fs.existsSync(candidate));
-      if (claudeMd) {
-        items.push(this.instructionItem("Project CLAUDE.md", claudeMd, folder.name));
-      }
-      const agentsMd = path.join(folder.uri.fsPath, "AGENTS.md");
-      if (fs.existsSync(agentsMd)) {
-        items.push(this.instructionItem("Project AGENTS.md", agentsMd, folder.name));
-      }
+      if (claudeMd) candidates.push({ scope: "Project", filePath: claudeMd, folder: folder.name });
+      candidates.push({ scope: "Project", filePath: path.join(folder.uri.fsPath, "AGENTS.md"), folder: folder.name });
     }
 
-    return items;
+    const byRealPath = new Map();
+    for (const candidate of candidates) {
+      if (!fs.existsSync(candidate.filePath)) continue;
+      const real = realPath(candidate.filePath);
+      if (!byRealPath.has(real)) byRealPath.set(real, { ...candidate, readAs: [] });
+      byRealPath.get(real).readAs.push(candidate.filePath.replace(os.homedir(), "~"));
+    }
+
+    return [...byRealPath].map(([real, entry]) => {
+      const target = vscode.Uri.file(real);
+      const item = new vscode.TreeItem(
+        `${entry.scope} ${path.basename(real)}`,
+        vscode.TreeItemCollapsibleState.None
+      );
+      item.command = { command: "vscode.open", title: "Open", arguments: [target] };
+      item.contextValue = "claudemd";
+      item.iconPath = new vscode.ThemeIcon("book");
+      item.resourceUri = target;
+      item.description = entry.folder || path.dirname(real).replace(os.homedir(), "~") + "/";
+      item.tooltip = `${real.replace(os.homedir(), "~")}\nRead as: ${entry.readAs.join(", ")}`;
+      return item;
+    });
   }
 }
 
