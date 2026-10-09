@@ -1,83 +1,36 @@
 # Fachwerk
 
-## Stop hunting through hidden directories for your Claude Code agents and skills.
+Keep the folders you choose within reach in your VS Code sidebar, across every workspace.
 
-Claude Code buries your agents in `~/.claude/agents/`, your skills in `~/.claude/skills/`, and your instructions in `~/.claude/CLAUDE.md`. Every time you need to edit one, you leave your editor, navigate to a hidden folder, and break your flow. You do this dozens of times a week if you are serious about your setup.
+Pin shared notes, documentation, templates, or any folder you use often. Each folder gets its own collapsible section. Click a file to open it, browse subfolders, and see changes automatically.
 
-Fachwerk puts all of it in your VS Code sidebar. One click to open any file. One click to create a new agent or skill. Always visible, every project, no navigation required.
+Install **Fachwerk** by **gundurraga** from the VS Code Marketplace.
 
-```
-ext install gundurraga.fachwerk
-```
+## Choose your folders
 
-## What you get
+Open Fachwerk in the Activity Bar and click **Add Folders**. Select one or several folders, including hidden folders, to pin them. You can also right click a folder in Explorer and choose **Add Folders**.
 
-**Four sidebar panels, always one click away:**
+Use **Manage Folders** to see all pinned folders and saved file sections, including sections preserved during an upgrade. Uncheck any you no longer want. Saved sections remain in the list, so you can check them again to restore them. Each section also has **Remove from Sidebar** in its header menu. Removing a pin leaves the folder and its files intact.
 
-1. **Agents** -- every agent in `~/.claude/agents/`, displayed with its folder structure
-2. **Skills** -- every skill in `~/.claude/skills/`, same treatment
-3. **Instructions** -- your global `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, and every project-level CLAUDE.md and AGENTS.md in your workspace, in one list. Linked files open at their real location
-4. **Custom Folders** -- any folder on your machine, pinned to the sidebar as its own section (up to 10)
+Fachwerk supports up to 10 pinned folders. Pins are saved globally, so they follow you between workspaces. Workspace settings can override them.
 
-Click a file to open it. The sidebar watches your filesystem and refreshes automatically when anything changes. You never press a refresh button. You never re-navigate.
+To manage paths directly, edit `fachwerk.folders` in VS Code settings. Each entry is an absolute folder path.
 
-## Create agents and skills without leaving the editor
+## Work with files
 
-Click the **+** button on the Agents or Skills panel. Type a name. Fachwerk creates the directory structure, writes a starter template with frontmatter, and opens the file for editing. The template for an agent looks like this:
+Files inside pinned folders offer copy, rename, and Move to Trash. Saved file collections offer opening and copying, so their references stay intact. Linked folders can be browsed, and linked files open at their real location. Hidden files and folders are included. An unavailable folder shows a message instead of appearing empty.
 
-```yaml
----
-name: your-agent-name
-description: Describe what this agent does
-tools:
-  - Read
-  - Glob
-  - Grep
----
+## Upgrading
 
-# Instructions
+Existing folder pins stay in place. Earlier Agents, Skills, and Instructions panels become ordinary saved sections, retaining their view identifiers and contents. Fachwerk no longer creates Claude directories or agent and skill templates.
 
-Write your agent instructions here.
-```
+Marketplace upgrades and existing folder settings trigger this conversion automatically. If a manual installation has no saved settings and no upgrade metadata, Fachwerk asks once whether to **Keep Previous Sidebar** or **Add Folders**.
 
-You are editing within seconds. No `mkdir`, no `touch`, no remembering the correct directory path.
+Saved sections live in `fachwerk.sections`. Each has a name and either an absolute folder path or a list of file paths. File sections can also find files relative to each workspace, keeping project instructions available when you switch projects. Hide any saved section from its header menu without deleting files, then restore it through **Manage Folders**.
 
-## Pin any folder to your sidebar
+## Development
 
-Prompt libraries. Shared templates. Documentation you reference constantly. Add any folder three ways:
-
-- Click **Add Folder** at the bottom of the Fachwerk panel
-- Run **"Add to Fachwerk"** from the Command Palette
-- Edit `fachwerk.folders` directly in your VS Code settings (an array of absolute paths)
-
-Each folder appears as its own collapsible section with its full directory tree. Remove it from the three-dot menu on the panel header. Folders are stored globally -- they persist across every workspace you open.
-
-## Right-click to manage files
-
-Right-click any file in the sidebar:
-
-- **Copy Content** -- copies the full file contents to your clipboard (works on all panels)
-- **Copy Path** -- copies the absolute path of any file or folder, handy for pointing an LLM at exactly the file you mean (works on all panels)
-- **Rename** -- rename agents and skills in place
-- **Delete** -- delete agents and skills with a confirmation prompt
-
-## Teach Claude Code about Fachwerk
-
-Add this to your CLAUDE.md:
-
-```markdown
-## Fachwerk
-
-The VS Code extension "Fachwerk" shows custom folders in the sidebar.
-To add or remove folders, update the `fachwerk.folders` array in VS Code's
-global settings (settings.json). Each entry is an absolute path.
-```
-
-Now when you tell Claude "add tmp/ to Fachwerk," it knows exactly what to do. Your AI manages its own sidebar.
-
-## Why the name
-
-Fachwerk is the German word for timber framing -- the exposed structure that holds a building together. Your agents, skills, and instructions are the structure that holds your AI workflow together. This extension makes that structure visible.
+Run `npm run lint` for JavaScript syntax checks and `npm test` for migration and sidebar tests. Run `npm run test:host` to check the migration and pin commands in an isolated VS Code window. Press F5 to open an Extension Development Host.
 
 ## License
 

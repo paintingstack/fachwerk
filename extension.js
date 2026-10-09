@@ -1,643 +1,262 @@
 const vscode = require("vscode");
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
+const fs = require("node:fs");
+const path = require("node:path");
+const { migrateLayout } = require("./migration");
+const { SectionProvider, realPath } = require("./tree");
 
-const CLAUDE_DIR = path.join(os.homedir(), ".claude");
-const AGENTS_DIR = path.join(CLAUDE_DIR, "agents");
-const SKILLS_DIR = path.join(CLAUDE_DIR, "skills");
-const GLOBAL_CLAUDE_MD = path.join(CLAUDE_DIR, "CLAUDE.md");
-const GLOBAL_AGENTS_MD = path.join(os.homedir(), ".codex", "AGENTS.md");
-const MAX_FOLDER_SLOTS = 10;
+const MAX_FOLDERS = 10;
+const FOLDER_SLOTS_KEY = "folderViewSlots";
+// Preserve view identifiers so VS Code keeps existing layout and visibility.
+const SAVED_SECTION_VIEWS = ["fachwerkAgents", "fachwerkSkills", "fachwerkClaudeMd"];
+const FOLDER_VIEWS = Array.from({ length: MAX_FOLDERS }, (_, index) => `fachwerkFolder${index}`);
+let settingsQueue = Promise.resolve();
 
-// Follow links, so the editor opens and watches the file that is really edited
-function realPath(filePath) {
-  try {
-    return fs.realpathSync(filePath);
-  } catch {
-    return filePath;
-  }
+/** Serializes settings changes, allowing a failed write to be retried. @param {Function} operation Mutation. @returns {Promise<void>} Completion. */
+function changeSettings(operation) {
+  settingsQueue = settingsQueue.then(operation, operation);
+  return settingsQueue;
 }
 
-function ensureDirectories() {
-  if (!fs.existsSync(AGENTS_DIR)) {
-    fs.mkdirSync(AGENTS_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(SKILLS_DIR)) {
-    fs.mkdirSync(SKILLS_DIR, { recursive: true });
-  }
+/** Reads global pins with optional workspace overrides. @param {string} key Setting. @returns {object} Values and write target. */
+function configuredList(key) {
+  const configuration = vscode.workspace.getConfiguration("fachwerk");
+  const inspection = configuration.inspect(key);
+  const target = inspection?.workspaceValue !== undefined
+    ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+  return { configuration, values: configuration.get(key, []), target };
 }
 
+/** Adds existing folders without duplicate saved or linked targets. @param {string[]} paths Folder paths. @returns {Promise<void>} Completion. */
 async function addFolderPaths(paths) {
-  const config = vscode.workspace.getConfiguration("fachwerk");
-  const folders = config.get("folders", []);
-  const newFolders = [...folders];
-
-  for (const folderPath of paths) {
-    if (newFolders.length >= MAX_FOLDER_SLOTS) {
-      vscode.window.showWarningMessage(
-        `Fachwerk supports up to ${MAX_FOLDER_SLOTS} folder sections`
-      );
-      break;
+  await changeSettings(async () => {
+    const { configuration, values, target } = configuredList("folders");
+    const sections = configuredList("sections");
+    const folders = [...values];
+    let sectionsChanged = false;
+    for (const folderPath of paths) {
+      const sectionIndex = sections.values.findIndex((section) => section.folder && realPath(section.folder) === realPath(folderPath));
+      if (sectionIndex >= 0) {
+        sections.values = sections.values.map((section, index) => index === sectionIndex ? { ...section, enabled: true } : section);
+        sectionsChanged = true;
+        continue;
+      }
+      if (folders.some((saved) => realPath(saved) === realPath(folderPath))) continue;
+      if (folders.length >= MAX_FOLDERS) {
+        vscode.window.showWarningMessage(`Fachwerk supports up to ${MAX_FOLDERS} folder sections.`);
+        break;
+      }
+      try {
+        if (fs.statSync(folderPath).isDirectory()) folders.push(folderPath);
+      } catch (error) {
+        console.error("Fachwerk: could not add folder", error);
+        vscode.window.showErrorMessage("Could not open that folder. Check that it exists and you have permission to read it.");
+      }
     }
-    if (!fs.existsSync(folderPath)) continue;
-    const stats = fs.statSync(folderPath);
-    if (!stats.isDirectory()) continue;
-    if (newFolders.includes(folderPath)) continue;
-    newFolders.push(folderPath);
-  }
-
-  if (newFolders.length > folders.length) {
-    await config.update(
-      "folders",
-      newFolders,
-      vscode.ConfigurationTarget.Global
-    );
-  }
+    if (sectionsChanged) await sections.configuration.update("sections", sections.values, sections.target);
+    if (folders.length !== values.length) await configuration.update("folders", folders, target);
+  });
 }
 
+/** Removes a pin or hides a saved section without deleting files. @param {string} key Setting. @param {string|object} value Pin. @returns {Promise<void>} Completion. */
+async function removePin(key, value) {
+  if (!value) return;
+  await changeSettings(async () => {
+    const { configuration, values, target } = configuredList(key);
+    const updated = key === "sections"
+      ? values.map((section) => JSON.stringify(section) === JSON.stringify(value) ? { ...section, enabled: false } : section)
+      : values.filter((folderPath) => folderPath !== value);
+    await configuration.update(key, updated, target);
+  });
+}
+
+/** Selects saved folders and file sections to keep in the sidebar. @returns {Promise<void>} Completion. */
+async function manageFolders() {
+  const lists = ["sections", "folders"].map((key) => ({ key, ...configuredList(key) }));
+  const choices = lists.flatMap(({ key, values }) => values.map((value, index) => ({
+    label: key === "sections" ? value.name : path.basename(value) || value,
+    description: key === "sections" ? value.folder || "File collection" : value,
+    picked: key === "folders" || value.enabled !== false, identifier: `${key}:${index}`,
+  })));
+  const selected = await vscode.window.showQuickPick(choices, {
+    canPickMany: true, title: "Manage Folders", placeHolder: "Check sections to show them, uncheck to remove them from the sidebar",
+  });
+  if (selected === undefined) return;
+  const retained = new Set(selected.map((choice) => choice.identifier));
+  await changeSettings(async () => {
+    for (const previous of lists) {
+      const current = configuredList(previous.key);
+      if (current.target !== previous.target) throw new Error("Folder settings changed while the list was open.");
+      const changes = new Map(previous.values.map((value, index) => [JSON.stringify(value), retained.has(`${previous.key}:${index}`)]));
+      const updated = previous.key === "sections"
+        ? current.values.map((section) => changes.has(JSON.stringify(section)) ? { ...section, enabled: changes.get(JSON.stringify(section)) } : section)
+        : current.values.filter((folderPath) => changes.get(JSON.stringify(folderPath)) !== false);
+      if (JSON.stringify(updated) !== JSON.stringify(current.values)) {
+        await current.configuration.update(previous.key, updated, current.target);
+      }
+    }
+  });
+}
+
+/** Keeps folder identities attached to their existing view slots. @param {string[]} previous Saved slots. @param {string[]} folders Current pins. @returns {Array<string|null>} Assigned slots. */
+function assignFolderSlots(previous, folders) {
+  const remaining = [...folders];
+  const slots = Array.from({ length: MAX_FOLDERS }, (_, index) => {
+    const folderPath = previous[index];
+    const position = folderPath ? remaining.indexOf(folderPath) : -1;
+    if (position < 0) return null;
+    remaining.splice(position, 1);
+    return folderPath;
+  });
+  for (const folderPath of remaining) {
+    const slot = slots.indexOf(null);
+    if (slot < 0) break;
+    slots[slot] = folderPath;
+  }
+  return slots;
+}
+
+/** Checks a single file or folder name. @param {string} name Name. @returns {boolean} Valid name. */
 function isValidName(name) {
-  return !name.includes("/") && !name.includes("\\") && !name.includes("..");
+  return name.trim().length > 0 && !name.includes("/") && !name.includes("\\") && !name.includes("..");
 }
 
-function readDirectory(directory, fileContextValue) {
-  if (!fs.existsSync(directory)) return [];
-
-  try {
-    const items = fs.readdirSync(directory, { withFileTypes: true });
-    return items
-      .filter((item) => !item.name.startsWith("."))
-      .map((item) => {
-        const itemPath = path.join(directory, item.name);
-        const isDirectory = item.isDirectory();
-
-        const treeItem = new vscode.TreeItem(
-          item.name,
-          isDirectory
-            ? vscode.TreeItemCollapsibleState.Collapsed
-            : vscode.TreeItemCollapsibleState.None
-        );
-
-        if (isDirectory) {
-          treeItem.contextValue = "folder";
-          treeItem.iconPath = new vscode.ThemeIcon("folder");
-        } else {
-          treeItem.command = {
-            command: "vscode.open",
-            title: "Open",
-            arguments: [vscode.Uri.file(itemPath)],
-          };
-          treeItem.contextValue = fileContextValue;
-          treeItem.iconPath = new vscode.ThemeIcon("file");
-        }
-
-        treeItem.resourceUri = vscode.Uri.file(itemPath);
-        return treeItem;
-      })
-      .sort((a, b) => {
-        if (a.contextValue === "folder" && b.contextValue !== "folder")
-          return -1;
-        if (a.contextValue !== "folder" && b.contextValue === "folder")
-          return 1;
-        return a.label.localeCompare(b.label);
-      });
-  } catch (err) {
-    console.error(`Fachwerk: failed to read ${directory}:`, err.message);
-    return [];
-  }
+/** Renames files inside browsed folders. @param {object} item Sidebar item. @returns {Promise<void>} Completion. */
+async function renameItem(item) {
+  if (!item?.resourceUri) return;
+  if (item.contextValue === "referenceFile") throw new Error("Files in collections can be opened and copied, but cannot be renamed here.");
+  const oldPath = item.resourceUri.fsPath;
+  const name = await vscode.window.showInputBox({ prompt: "Enter new name", value: path.basename(oldPath) });
+  if (!name || name === path.basename(oldPath)) return;
+  if (!isValidName(name)) throw new Error("Name cannot contain path separators or '..'.");
+  const destination = path.join(path.dirname(oldPath), name);
+  if (fs.existsSync(destination)) throw new Error(`"${name}" already exists.`);
+  await vscode.workspace.fs.rename(item.resourceUri, vscode.Uri.file(destination), { overwrite: false });
 }
 
-class ItemProvider {
-  constructor(rootDir, itemType) {
-    this.rootDir = rootDir;
-    this.itemType = itemType;
-    this._onDidChangeTreeData = new vscode.EventEmitter();
-    this.onDidChangeTreeData = this._onDidChangeTreeData.event;
-  }
-
-  refresh() {
-    this._onDidChangeTreeData.fire();
-  }
-
-  getTreeItem(element) {
-    return element;
-  }
-
-  getChildren(element) {
-    const directory = element ? element.resourceUri.fsPath : this.rootDir;
-    return readDirectory(directory, this.itemType);
-  }
+/** Sends items inside browsed folders to Trash. @param {object} item Sidebar item. @returns {Promise<void>} Completion. */
+async function deleteItem(item) {
+  if (!item?.resourceUri) return;
+  if (item.contextValue === "referenceFile") throw new Error("Files in collections can be opened and copied, but cannot be moved to Trash here.");
+  const choice = await vscode.window.showWarningMessage(`Move "${path.basename(item.resourceUri.fsPath)}" to Trash?`, "Move to Trash");
+  if (choice === "Move to Trash") await vscode.workspace.fs.delete(item.resourceUri, { recursive: true, useTrash: true });
 }
 
-class FolderSlotProvider {
-  constructor() {
-    this.folderPath = null;
-    this._onDidChangeTreeData = new vscode.EventEmitter();
-    this.onDidChangeTreeData = this._onDidChangeTreeData.event;
-    this._watcher = null;
-  }
-
-  setFolder(folderPath) {
-    this.folderPath = folderPath;
-    if (this._watcher) {
-      this._watcher.dispose();
-      this._watcher = null;
+/** Registers a command with visible failures and diagnostic details. @param {object} options Context, identifier, and handler. @returns {void} */
+function registerCommand({ context, identifier, handler }) {
+  context.subscriptions.push(vscode.commands.registerCommand(identifier, async (...arguments_) => {
+    try { await handler(...arguments_); } catch (error) {
+      console.error(`Fachwerk: ${identifier} failed`, error);
+      const messages = {
+        "fachwerk.addFolder": "Could not save your folders. Please try again.",
+        "fachwerk.manageFolders": "Could not save your selection. Open Manage Folders and try again.",
+        "fachwerk.copyItem": "Could not copy the file. Check that it exists and can be read.",
+        "fachwerk.copyPath": "Could not copy the path. Please try again.",
+        "fachwerk.renameItem": itemError(arguments_[0], "rename", "Could not rename the item. Check the name, folder permissions, and whether the name is already in use."),
+        "fachwerk.deleteItem": itemError(arguments_[0], "delete", "Could not move the item to Trash. Check that it exists and you have permission."),
+      };
+      vscode.window.showErrorMessage(messages[identifier] || "Could not update your sidebar. Please try again.");
     }
-    if (folderPath && fs.existsSync(folderPath)) {
-      this._watcher = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(folderPath, "**/*")
-      );
-      this._watcher.onDidCreate(() => this.refresh());
-      this._watcher.onDidDelete(() => this.refresh());
-      this._watcher.onDidChange(() => this.refresh());
-    }
-    this._onDidChangeTreeData.fire();
-  }
-
-  refresh() {
-    this._onDidChangeTreeData.fire();
-  }
-
-  dispose() {
-    if (this._watcher) this._watcher.dispose();
-  }
-
-  getTreeItem(element) {
-    return element;
-  }
-
-  getChildren(element) {
-    if (!this.folderPath) return [];
-    const directory = element ? element.resourceUri.fsPath : this.folderPath;
-    return readDirectory(directory, "folderFile");
-  }
+  }));
 }
 
-class ClaudeMdProvider {
-  constructor() {
-    this._onDidChangeTreeData = new vscode.EventEmitter();
-    this.onDidChangeTreeData = this._onDidChangeTreeData.event;
-  }
-
-  refresh() {
-    this._onDidChangeTreeData.fire();
-  }
-
-  getTreeItem(element) {
-    return element;
-  }
-
-  // One item per real file: links that resolve to the same file (for example
-  // ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md both pointing at one shared file)
-  // collapse into a single entry whose tooltip names every path that reads it.
-  getChildren() {
-    const candidates = [
-      { scope: "Global", filePath: GLOBAL_CLAUDE_MD },
-      { scope: "Global", filePath: GLOBAL_AGENTS_MD },
-    ];
-    for (const folder of vscode.workspace.workspaceFolders || []) {
-      const claudeMd = [
-        path.join(folder.uri.fsPath, ".claude", "CLAUDE.md"),
-        path.join(folder.uri.fsPath, "CLAUDE.md"),
-      ].find((candidate) => fs.existsSync(candidate));
-      if (claudeMd) candidates.push({ scope: "Project", filePath: claudeMd, folder: folder.name });
-      candidates.push({ scope: "Project", filePath: path.join(folder.uri.fsPath, "AGENTS.md"), folder: folder.name });
-    }
-
-    const byRealPath = new Map();
-    for (const candidate of candidates) {
-      if (!fs.existsSync(candidate.filePath)) continue;
-      const real = realPath(candidate.filePath);
-      if (!byRealPath.has(real)) byRealPath.set(real, { ...candidate, readAs: [] });
-      byRealPath.get(real).readAs.push(candidate.filePath.replace(os.homedir(), "~"));
-    }
-
-    return [...byRealPath].map(([real, entry]) => {
-      const target = vscode.Uri.file(real);
-      const item = new vscode.TreeItem(
-        `${entry.scope} ${path.basename(real)}`,
-        vscode.TreeItemCollapsibleState.None
-      );
-      item.command = { command: "vscode.open", title: "Open", arguments: [target] };
-      item.contextValue = "claudemd";
-      item.iconPath = new vscode.ThemeIcon("book");
-      item.resourceUri = target;
-      item.description = entry.folder || path.dirname(real).replace(os.homedir(), "~") + "/";
-      item.tooltip = `${real.replace(os.homedir(), "~")}\nRead as: ${entry.readAs.join(", ")}`;
-      return item;
-    });
-  }
+/** Explains unavailable actions on file references. @param {object} item Item. @param {string} action Action. @param {string} fallback Message. @returns {string} Message. */
+function itemError(item, action, fallback) {
+  if (item?.contextValue === "referenceFile") return `Open the file from its folder to ${action} it. File collections only open and copy files.`;
+  return fallback;
 }
 
-function activate(context) {
-  ensureDirectories();
+/** Starts the folder sidebar and migrates saved views. @param {object} context Extension context. @returns {Promise<void>} Completion. */
+async function activate(context) {
+  const chooseFolders = await migrateLayout({ vscode, context });
+  const providers = new Map();
+  const views = new Map();
+  let folderSlots = [];
+  let renderQueue = Promise.resolve();
+  for (const identifier of [...SAVED_SECTION_VIEWS, ...FOLDER_VIEWS]) {
+    const provider = new SectionProvider();
+    const view = vscode.window.createTreeView(identifier, { treeDataProvider: provider, showCollapseAll: true });
+    providers.set(identifier, provider);
+    views.set(identifier, view);
+    context.subscriptions.push(provider, view);
+  }
+  context.subscriptions.push(vscode.window.registerTreeDataProvider("fachwerkFolders", {
+    getTreeItem: (element) => element, getChildren: () => [],
+  }));
 
-  const agentsProvider = new ItemProvider(AGENTS_DIR, "agent");
-  const skillsProvider = new ItemProvider(SKILLS_DIR, "skill");
-  const claudeMdProvider = new ClaudeMdProvider();
-
-  vscode.window.createTreeView("fachwerkAgents", {
-    treeDataProvider: agentsProvider,
-    showCollapseAll: true,
-  });
-
-  vscode.window.createTreeView("fachwerkSkills", {
-    treeDataProvider: skillsProvider,
-    showCollapseAll: true,
-  });
-
-  vscode.window.createTreeView("fachwerkClaudeMd", {
-    treeDataProvider: claudeMdProvider,
-  });
-
-  // Empty folders view (hosts the "Add Folder" welcome button)
-  let needsReload = false;
-  try {
-    vscode.window.registerTreeDataProvider("fachwerkFolders", {
-      getTreeItem: (e) => e,
-      getChildren: () => [],
-    });
-  } catch (_) {
-    needsReload = true;
+  /** Applies current settings while preserving panel identities. @returns {Promise<void>} Completion. */
+  async function renderViews() {
+    const configuration = vscode.workspace.getConfiguration("fachwerk");
+    const sections = configuration.get("sections", []);
+    const { values: folders, target } = configuredList("folders");
+    const folderState = target === vscode.ConfigurationTarget.Workspace ? context.workspaceState : context.globalState;
+    const previousSlots = folderState.get(FOLDER_SLOTS_KEY, []);
+    const assignedSlots = assignFolderSlots(previousSlots, folders);
+    if (JSON.stringify(assignedSlots) !== JSON.stringify(previousSlots)) {
+      await folderState.update(FOLDER_SLOTS_KEY, assignedSlots);
+    }
+    folderSlots = assignedSlots;
+    for (const [index, identifier] of SAVED_SECTION_VIEWS.entries()) {
+      const section = sections[index];
+      const isEnabled = Boolean(section) && section.enabled !== false;
+      providers.get(identifier).setSection(isEnabled ? section : null);
+      if (section) views.get(identifier).title = section.name;
+      await vscode.commands.executeCommand("setContext", `${identifier}.visible`, isEnabled);
+    }
+    for (const [index, identifier] of FOLDER_VIEWS.entries()) {
+      const folderPath = folderSlots[index];
+      providers.get(identifier).setSection(folderPath ? { folder: folderPath } : null);
+      if (folderPath) views.get(identifier).title = path.basename(folderPath) || folderPath;
+      await vscode.commands.executeCommand("setContext", `fachwerk.hasFolder${index}`, Boolean(folderPath));
+    }
+    await vscode.commands.executeCommand("setContext", "fachwerk.hasPins", folders.length > 0 || sections.length > 0);
   }
 
-  // Folder slots
-  const folderSlots = [];
-  const folderViews = [];
-  for (let i = 0; i < MAX_FOLDER_SLOTS; i++) {
-    const provider = new FolderSlotProvider();
-    let view = null;
-    try {
-      view = vscode.window.createTreeView(`fachwerkFolder${i}`, {
-        treeDataProvider: provider,
-        showCollapseAll: true,
-      });
-    } catch (_) {
-      needsReload = true;
-    }
-    folderSlots.push(provider);
-    folderViews.push(view);
+  /** Serializes renders so an older update cannot replace a newer one. @returns {Promise<void>} Completion. */
+  function updateViews() {
+    renderQueue = renderQueue.then(renderViews, renderViews);
+    return renderQueue;
   }
-
-  if (needsReload) {
-    vscode.window
-      .showInformationMessage(
-        "Fachwerk was updated. Reload the window to enable all sidebar panels.",
-        "Reload Window"
-      )
-      .then((choice) => {
-        if (choice === "Reload Window") {
-          vscode.commands.executeCommand("workbench.action.reloadWindow");
-        }
-      });
-  }
-
-  function updateFolderSlots() {
-    const folders = vscode.workspace
-      .getConfiguration("fachwerk")
-      .get("folders", []);
-
-    for (let i = 0; i < MAX_FOLDER_SLOTS; i++) {
-      if (i < folders.length) {
-        folderSlots[i].setFolder(folders[i]);
-        if (folderViews[i]) folderViews[i].title = path.basename(folders[i]);
-        vscode.commands.executeCommand(
-          "setContext",
-          `fachwerk.hasFolder${i}`,
-          true
-        );
-      } else {
-        folderSlots[i].setFolder(null);
-        vscode.commands.executeCommand(
-          "setContext",
-          `fachwerk.hasFolder${i}`,
-          false
-        );
-      }
-    }
-  }
-
-  updateFolderSlots();
-
-  // File watchers for agents/skills
-  const agentsWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(realPath(AGENTS_DIR), "**/*")
-  );
-  const skillsWatcher = vscode.workspace.createFileSystemWatcher(
-    new vscode.RelativePattern(realPath(SKILLS_DIR), "**/*")
-  );
-
-  agentsWatcher.onDidCreate(() => agentsProvider.refresh());
-  agentsWatcher.onDidDelete(() => agentsProvider.refresh());
-  agentsWatcher.onDidChange(() => agentsProvider.refresh());
-
-  skillsWatcher.onDidCreate(() => skillsProvider.refresh());
-  skillsWatcher.onDidDelete(() => skillsProvider.refresh());
-  skillsWatcher.onDidChange(() => skillsProvider.refresh());
-
-  const globalInstructionWatchers = [GLOBAL_CLAUDE_MD, GLOBAL_AGENTS_MD].map((filePath) => {
-    const target = realPath(filePath);
-    const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(path.dirname(target), path.basename(target))
-    );
-    watcher.onDidCreate(() => claudeMdProvider.refresh());
-    watcher.onDidDelete(() => claudeMdProvider.refresh());
-    watcher.onDidChange(() => claudeMdProvider.refresh());
-    return watcher;
+  await updateViews();
+  const requestUpdate = () => updateViews().catch((error) => {
+    console.error("Fachwerk: sidebar refresh failed", error);
+    vscode.window.showErrorMessage("Could not refresh the sidebar. Please try Refresh again.");
   });
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration("fachwerk")) requestUpdate();
+  }));
+  context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(requestUpdate));
 
-  function watchProjectClaudeMd() {
-    const watchers = [];
-    for (const folder of vscode.workspace.workspaceFolders || []) {
-      const w1 = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(folder, ".claude/CLAUDE.md")
-      );
-      const w2 = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(folder, "CLAUDE.md")
-      );
-      const w3 = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(folder, "AGENTS.md")
-      );
-      for (const w of [w1, w2, w3]) {
-        w.onDidCreate(() => claudeMdProvider.refresh());
-        w.onDidDelete(() => claudeMdProvider.refresh());
-        w.onDidChange(() => claudeMdProvider.refresh());
-        watchers.push(w);
-      }
-    }
-    return watchers;
-  }
-
-  let projectClaudeMdWatchers = watchProjectClaudeMd();
-  context.subscriptions.push(...projectClaudeMdWatchers);
-
-  vscode.workspace.onDidChangeWorkspaceFolders(() => {
-    for (const w of projectClaudeMdWatchers) w.dispose();
-    projectClaudeMdWatchers = watchProjectClaudeMd();
-    context.subscriptions.push(...projectClaudeMdWatchers);
-    claudeMdProvider.refresh();
-  });
-
-  vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration("fachwerk.folders")) {
-      updateFolderSlots();
-    }
-  });
-
-  // Commands
-  const addAgent = vscode.commands.registerCommand(
-    "fachwerk.addAgent",
-    async () => {
-      const name = await vscode.window.showInputBox({
-        prompt: "Agent name",
-        placeHolder: "e.g., code-reviewer",
+  const handlers = {
+    "fachwerk.addFolder": async (uri, selectedUris) => {
+      if (uri?.fsPath) return addFolderPaths((selectedUris || [uri]).map((selected) => selected.fsPath));
+      const folders = await vscode.window.showOpenDialog({
+        canSelectFiles: false, canSelectFolders: true, canSelectMany: true, openLabel: "Add Folders",
+        title: "Choose folders for your sidebar",
       });
-
-      if (!name) return;
-      if (!isValidName(name)) {
-        vscode.window.showErrorMessage("Name cannot contain path separators or '..'");
-        return;
-      }
-
-      const agentDir = path.join(AGENTS_DIR, name);
-      const filePath = path.join(agentDir, `${name}.md`);
-
-      if (fs.existsSync(agentDir)) {
-        vscode.window.showErrorMessage(`Agent "${name}" already exists`);
-        return;
-      }
-
-      const template = `---
-name: ${name}
-description: Describe what this agent does
-tools:
-  - Read
-  - Glob
-  - Grep
----
-
-# Instructions
-
-Write your agent instructions here.
-`;
-
-      try {
-        fs.mkdirSync(agentDir, { recursive: true });
-        fs.writeFileSync(filePath, template, "utf8");
-        const doc = await vscode.workspace.openTextDocument(filePath);
-        await vscode.window.showTextDocument(doc);
-        agentsProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Failed to create agent: ${err.message}`
-        );
-      }
-    }
-  );
-
-  const addSkill = vscode.commands.registerCommand(
-    "fachwerk.addSkill",
-    async () => {
-      const name = await vscode.window.showInputBox({
-        prompt: "Skill name",
-        placeHolder: "e.g., commit",
-      });
-
-      if (!name) return;
-      if (!isValidName(name)) {
-        vscode.window.showErrorMessage("Name cannot contain path separators or '..'");
-        return;
-      }
-
-      const skillDir = path.join(SKILLS_DIR, name);
-      const filePath = path.join(skillDir, "SKILL.md");
-
-      if (fs.existsSync(skillDir)) {
-        vscode.window.showErrorMessage(`Skill "${name}" already exists`);
-        return;
-      }
-
-      const template = `---
-name: ${name}
-description: Describe what this skill does
-user_invocable: true
----
-
-# Instructions
-
-Write your skill instructions here.
-`;
-
-      try {
-        fs.mkdirSync(skillDir, { recursive: true });
-        fs.writeFileSync(filePath, template, "utf8");
-        const doc = await vscode.workspace.openTextDocument(filePath);
-        await vscode.window.showTextDocument(doc);
-        skillsProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Failed to create skill: ${err.message}`
-        );
-      }
-    }
-  );
-
-  const addFolder = vscode.commands.registerCommand(
-    "fachwerk.addFolder",
-    async (uri) => {
-      if (uri && uri.fsPath) {
-        await addFolderPaths([uri.fsPath]);
-        return;
-      }
-
-      const uris = await vscode.window.showOpenDialog({
-        canSelectFiles: false,
-        canSelectFolders: true,
-        canSelectMany: false,
-        openLabel: "Add Folder",
-      });
-
-      if (!uris || uris.length === 0) return;
-      await addFolderPaths([uris[0].fsPath]);
-    }
-  );
-
-  // Remove folder commands (one per slot)
-  for (let i = 0; i < MAX_FOLDER_SLOTS; i++) {
-    context.subscriptions.push(
-      vscode.commands.registerCommand(
-        `fachwerk.removeFolder${i}`,
-        async () => {
-          const config = vscode.workspace.getConfiguration("fachwerk");
-          const folders = config.get("folders", []);
-          if (i >= folders.length) return;
-          const updated = [...folders];
-          updated.splice(i, 1);
-          await config.update(
-            "folders",
-            updated,
-            vscode.ConfigurationTarget.Global
-          );
-        }
-      )
-    );
-  }
-
-  const copyItem = vscode.commands.registerCommand(
-    "fachwerk.copyItem",
-    async (item) => {
-      if (!item || !item.resourceUri) return;
-      try {
-        const content = fs.readFileSync(item.resourceUri.fsPath, "utf8");
-        await vscode.env.clipboard.writeText(content);
-        vscode.window.showInformationMessage(`Copied: ${item.label}`);
-      } catch (err) {
-        vscode.window.showErrorMessage(`Failed to copy: ${err.message}`);
-      }
-    }
-  );
-
-  const copyPath = vscode.commands.registerCommand(
-    "fachwerk.copyPath",
-    async (item) => {
-      if (!item || !item.resourceUri) return;
-      const itemPath = item.resourceUri.fsPath;
-      await vscode.env.clipboard.writeText(itemPath);
-      vscode.window.showInformationMessage(`Copied path: ${itemPath}`);
-    }
-  );
-
-  const deleteItem = vscode.commands.registerCommand(
-    "fachwerk.deleteItem",
-    async (item) => {
-      if (!item || !item.resourceUri) return;
-      const isFolder = item.contextValue === "folder";
-      const itemType = isFolder ? "folder" : item.contextValue;
-
-      const result = await vscode.window.showWarningMessage(
-        `Delete ${itemType} "${item.label}"?`,
-        "Delete",
-        "Cancel"
-      );
-
-      if (result === "Delete") {
-        try {
-          const targetPath = item.resourceUri.fsPath;
-          const stats = fs.statSync(targetPath);
-          if (stats.isDirectory()) {
-            fs.rmSync(targetPath, { recursive: true, force: true });
-          } else {
-            fs.unlinkSync(targetPath);
-          }
-          agentsProvider.refresh();
-          skillsProvider.refresh();
-          claudeMdProvider.refresh();
-        } catch (err) {
-          vscode.window.showErrorMessage(`Failed to delete: ${err.message}`);
-        }
-      }
-    }
-  );
-
-  const renameItem = vscode.commands.registerCommand(
-    "fachwerk.renameItem",
-    async (item) => {
-      if (!item || !item.resourceUri) return;
-      const newName = await vscode.window.showInputBox({
-        prompt: "Enter new name",
-        value: item.label,
-      });
-
-      if (!newName || newName === item.label) return;
-      if (!isValidName(newName)) {
-        vscode.window.showErrorMessage("Name cannot contain path separators or '..'");
-        return;
-      }
-
-      const parentDir = path.dirname(item.resourceUri.fsPath);
-      const newPath = path.join(parentDir, newName);
-
-      if (fs.existsSync(newPath)) {
-        vscode.window.showErrorMessage(`"${newName}" already exists`);
-        return;
-      }
-
-      try {
-        fs.renameSync(item.resourceUri.fsPath, newPath);
-        agentsProvider.refresh();
-        skillsProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(`Failed to rename: ${err.message}`);
-      }
-    }
-  );
-
-  const refresh = vscode.commands.registerCommand("fachwerk.refresh", () => {
-    agentsProvider.refresh();
-    skillsProvider.refresh();
-    claudeMdProvider.refresh();
-    for (const slot of folderSlots) slot.refresh();
-  });
-
-  context.subscriptions.push(
-    addAgent,
-    addSkill,
-    addFolder,
-    copyItem,
-    copyPath,
-    deleteItem,
-    renameItem,
-    refresh,
-    agentsWatcher,
-    skillsWatcher,
-    ...globalInstructionWatchers,
-    ...folderSlots
-  );
+      if (folders) await addFolderPaths(folders.map((folder) => folder.fsPath));
+    },
+    "fachwerk.manageFolders": manageFolders,
+    "fachwerk.copyItem": async (item) => {
+      if (item?.resourceUri) await vscode.env.clipboard.writeText(fs.readFileSync(realPath(item.resourceUri.fsPath), "utf8"));
+    },
+    "fachwerk.copyPath": async (item) => {
+      if (item?.resourceUri) await vscode.env.clipboard.writeText(item.resourceUri.fsPath);
+    },
+    "fachwerk.renameItem": renameItem,
+    "fachwerk.deleteItem": deleteItem,
+    "fachwerk.refresh": updateViews,
+  };
+  for (const [index] of FOLDER_VIEWS.entries()) handlers[`fachwerk.removeFolder${index}`] = async () => {
+    await updateViews();
+    await removePin("folders", folderSlots[index]);
+    await updateViews();
+  };
+  for (const [index] of SAVED_SECTION_VIEWS.entries()) handlers[`fachwerk.removeSection${index}`] = async () => {
+    await removePin("sections", configuredList("sections").values[index]);
+    await updateViews();
+  };
+  for (const [identifier, handler] of Object.entries(handlers)) registerCommand({ context, identifier, handler });
+  if (chooseFolders) await vscode.commands.executeCommand("fachwerk.addFolder");
 }
 
-function deactivate() {}
-
-module.exports = {
-  activate,
-  deactivate,
-};
+module.exports = { activate };

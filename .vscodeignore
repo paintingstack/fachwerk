@@ -5,3 +5,8 @@ press-release.md
 
 .env
 .env.*
+test/**
+scripts/**
+.test-*/**
+*.reference
+.test-*
